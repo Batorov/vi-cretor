@@ -1,0 +1,714 @@
+<head>
+  <meta charset="utf-8">
+  <script src="blockly_compressed.js" charset="utf-8"></script> <!--импорт библиотеки ядра Blockly-->
+  <script src="blocks_compressed.js" charset="utf-8"></script> <!--импорт библиотеки основных блоков-->
+  <script src="msg/js/ru.js" charset="utf-8"></script> <!--импорт библиотеки сообщений-->
+  <script src="javascript_compressed.js" charset="utf-8"> </script>
+  <script src="python_compressed.js" charset="utf-8"> </script> 
+  <script src="php_compressed.js" charset="utf-8"> </script> 
+</head>
+
+<body>
+  <div id="blocklyDiv" style="float: left; height: 70%; width: 100%;"></div> <!--настройки размера поля -->
+
+  <xml id="toolbox" style="display: none"><!--отображение левой панели -->
+    
+    <category name="Логика">
+      <block type="controls_if"></block>
+      <block type="like"></block> 
+      
+    </category>
+
+    <category name="VK">
+      <block type="vk_api"></block><!--присвоение токена-->
+      <block type="vk_api2"></block><!--присвоение токенов для callback api-->
+      <block type="procedures_answer"></block><!--получение сообщения-->
+      
+      <block type="input_text1"></block><!--переменная с сообщением-->
+    </category> 
+    
+    <category name="Слова и вес">
+      <block type="text"></block>
+      <block type="math_number"></block>
+      <block type="lists_create_with"> 
+         <mutation items="3"></mutation>
+      </block>
+      <block type="lists_answer"> 
+        <mutation items_answer="2"></mutation>
+      </block>
+      <block type="answer_weight"></block>
+
+    </category>
+    
+    <!--<category name="Переменные" custom="VARIABLE"></category>
+    
+    <category name="Функции" custom="PROCEDURE"></category>-->
+
+  </xml>
+
+  <div id="code">
+    <div id="controls">
+      <input id="inputId" type="button" value="Сохранить прогресс" onclick="Save()">
+      <input id="inputId1" type="button" value="Восстановить прогресс" onclick="Insert()">
+      <input id="inputId1" type="button" value="Бот готов" onclick="Donwload()">
+      
+      &emsp;язык:
+      <select id="language_selection" onChange="myUpdateFunction()"> 
+        <option selected value="Python">Python</option> 
+        <option value="PHP">PHP</option> 
+      </select>
+      
+    </div> 
+    <textarea id="code_area" style="height: 24%; width: 100%"></textarea>
+  </div> 
+
+ 
+  
+  <script> 
+    var CountAnswer;
+    var PHPCode = '<?php\nfunction randomFloat($min = 0, $max = 1) {\n\
+    return $min + mt_rand() / mt_getrandmax() * ($max - $min);\n\
+}\n\
+\n\
+function choices( $values, $weights )\n\
+{\n\
+    $total = array_sum( $weights );\n\
+    $n = 0;\n\
+    $num = randomFloat( 0, $total );\n\
+    foreach ( $values as $i => $value )\n\
+    {\n\
+        $n += $weights[$i];\n\
+        if ( $n >= $num )\n\
+        {\n\
+            return $values[$i];\n\
+        }\n\
+    }\n\
+}\n\n';
+    
+    var PHPServerCode = "\n\
+function vk_msg_send($peer_id,$text){\n\
+  global $TOKEN;\n\
+	$request_params = array(\n\
+		'message' => is_array($text)?implode(\"\\n\",$text):$text,\n\
+		'peer_id' => $peer_id, \n\
+		'access_token' => $TOKEN, \n\
+		'v' => '5.110', \n\
+    'random_id' => '0'\n\
+	);\n\
+	$get_params = http_build_query($request_params);\n\
+	file_get_contents('https://api.vk.com/method/messages.send?'. $get_params);\n\
+}\n\
+\n\
+$data = json_decode(file_get_contents('php://input'));\n\
+\n\
+switch ($data->type) {\n\
+	case 'confirmation':\n\
+		echo $confirmation_token;\n\
+	break;  \n\
+\n\
+	case 'message_new':\n\
+		$message_text = $data -> object -> message -> text;\n\
+		$chat_id = $data -> object -> message -> peer_id;\n\
+		vk_msg_send($chat_id, answer($message_text));\n\
+\n\
+		echo 'ok';\n\
+	break;\n\
+}";
+    
+    var PythonCode = 'from random import choices\n\n';
+    
+    var PythonServerCode = '\n\
+import requests\n\
+import vk_api\n\
+from vk_api.utils import get_random_id\n\
+\n\
+vk_session = vk_api.VkApi(token=TOKEN)\n\
+\n\
+from vk_api.longpoll import VkLongPoll, VkEventType\n\
+longpoll = VkLongPoll(vk_session)\n\
+vk = vk_session.get_api()\n\
+for event in longpoll.listen():\n\
+    if event.type == VkEventType.MESSAGE_NEW and event.to_me and event.text:\n\
+   #Слушаем longpoll, если пришло сообщение то:\n\
+        if answer(event.text): #Если написали заданную фразу\n\
+            response = "\\n".join(answer(event.text)) if isinstance(answer(event.text), list) else answer(event.text)\n\
+            if event.from_user: #Если написали в ЛС\n\
+                vk.messages.send( #Отправляем сообщение\n\
+                    user_id=event.user_id,\n\
+                    message=response,\n\
+                    random_id = get_random_id()\n\
+                )\n\
+            elif event.from_chat: #Если написали в Беседе\n\
+                vk.messages.send( #Отправляем собщение\n\
+                    chat_id=event.chat_id,\n\
+                    message=response,\n\
+                    random_id = get_random_id()\n\
+                )\n';
+    
+    //настройки правой части окна
+    var workspace = Blockly.inject('blocklyDiv',
+      {toolbox: document.getElementById('toolbox'),
+        grid:{
+        spacing: 20, // расстояние между элементами сетки
+        length: 3, // размер элементов сетки
+        colour: '#ccc', // цвет сетки
+        snap: true // режим привязки к сетке
+        }, 
+        zoom:{
+        controls: true, // режим отображения элементов управления масштабом
+        wheel: true, // режим использования колеса мыши для масштабирования
+        startScale: 1.0, // начальный масштаб
+        maxScale: 3, // максимально возможное увеличение
+        minScale: 0.3, // минимально возможное уменьшение
+        scaleSpeed: 1.3
+        }, // шаг изменения масштаба
+        trashcan: true //отображение корзины
+      }
+    );
+    Blockly.svgResize(workspace); //для фикса ошибки масштабирования
+    //отправка картинки в вк
+     Blockly.Blocks['img'] = {
+      init: function() {
+        this.appendValueInput("http")
+            .setCheck(null)
+            .appendField("Отправка эмоции. Сссылка на картинку = ");
+        this.setColour(256);
+        this.setOutput(true, null);
+      }
+    };
+    //описание кода отправки картинки
+    Blockly.Python['img'] = function(block) {
+      var value_url = Blockly.Python.valueToCode(block, 'http', Blockly.Python.ORDER_ATOMIC);
+      // TODO: Assemble Python into code variable.
+      var code = "photo_messages(value_url):\n"
+      return code;
+    };
+   
+    //структура события ввода сообщения в вк
+    Blockly.Blocks['procedures_answer'] = {
+      init: function() {
+        this.appendDummyInput()
+          //setCheck(null)
+          .appendField("При отправлении человеком в вк сообщения ")
+          //.appendField("=");
+        this.appendStatementInput("answer(message)")
+          .setCheck(null)
+          .appendField("делает");
+        this.setPreviousStatement(true, null);
+        //this.setNextStatement(true, null);
+        this.setColour(200)
+      this.setTooltip("Функция принимающая на вход переменную сообщения из вк");
+      }
+    }
+    //описание события на питоне
+    Blockly.Python['procedures_answer'] = function(block) {
+      
+      var mes = Blockly.Python.valueToCode(block, 'message', Blockly.Python.ORDER_ATOMIC);
+      var statements_answer_message_ = Blockly.Python.statementToCode(block, 'answer(message)');
+      
+     /*var code = 
+      "from vk_api.longpoll import VkLongPoll, VkEventType\n"+
+      "longpoll = VkLongPoll(vk_session)\n"+
+      "vk = vk_session.get_api()\n"+
+      "for event in longpoll.listen():\n"+
+      statements_answer_message_;
+      //'def answer'+mes+':\n'+statements_answer_message_;*/
+      var code = "def answer(message: str):\n" + statements_answer_message_;
+      return code;
+    };
+    
+    //описание события на php
+    Blockly.PHP['procedures_answer'] = function(block) {
+      
+      var mes = Blockly.PHP.valueToCode(block, 'message', Blockly.Python.ORDER_ATOMIC);
+      var statements_answer_message_ = Blockly.PHP.statementToCode(block, 'answer(message)');
+      
+     /*var code = 
+      "from vk_api.longpoll import VkLongPoll, VkEventType\n"+
+      "longpoll = VkLongPoll(vk_session)\n"+
+      "vk = vk_session.get_api()\n"+
+      "for event in longpoll.listen():\n"+
+      statements_answer_message_;
+      //'def answer'+mes+':\n'+statements_answer_message_;*/
+      var code = "function answer($message)\n{\n" + statements_answer_message_ + "\n}\n";
+      return code;
+    };
+    
+    //блок с переменной вк сообщения
+    Blockly.Blocks['input_text1'] = {
+      init: function() {
+        this.setColour(200)
+        this.appendDummyInput()
+          .appendField("Текст собщения из бота");
+        this.setOutput(true, null);
+      }
+    };
+    //описание переменной с сообщением на питоне
+    Blockly.Python['input_text1'] = function(block) {
+        //var code_input_text = "event.text" 
+        return ["message",Blockly.Python.ORDER_NONE]; 
+    }
+    //описание переменной с сообщением на PHP
+    Blockly.PHP['input_text1'] = function(block) {
+        //var code_input_text = "event.text" 
+        return ["$message",Blockly.PHP.ORDER_NONE]; 
+    }
+    //блок похожести двух сообщений
+    Blockly.Blocks['like'] = {
+      init: function() {
+        this.setColour(150)
+        this.appendValueInput("mes1")
+        this.appendDummyInput()
+          .appendField("==");
+        this.appendValueInput("mes0")
+        this.setInputsInline(true); 
+        this.setOutput(true, null);
+      }
+    }
+    //описание блок похожести на питоне
+    Blockly.Python['like'] = function(block) {
+      var val_mes1 = Blockly.Python.valueToCode(block, 'mes1', Blockly.Python.ORDER_NONE);
+      var val_mes0 = Blockly.Python.valueToCode(block, 'mes0', Blockly.Python.ORDER_ATOMIC);
+      return [val_mes1+"=="+val_mes0,Blockly.Python.ORDER_NONE]; 
+    } 
+    //описание блок похожести на PHP
+    Blockly.PHP['like'] = function(block) {
+      var val_mes1 = Blockly.PHP.valueToCode(block, 'mes1', Blockly.PHP.ORDER_NONE);
+      var val_mes0 = Blockly.PHP.valueToCode(block, 'mes0', Blockly.PHP.ORDER_ATOMIC);
+      return [val_mes1+"=="+val_mes0,Blockly.PHP.ORDER_NONE]; 
+    } 
+    //блок поключения к вк
+    Blockly.Blocks['vk_api'] = {
+      init: function() {
+        this.setColour(200)
+        this.appendDummyInput()
+          .appendField("Блок подключения к ВК");
+        this.appendValueInput("token")
+          .appendField("Введите токен");
+        //this.setPreviousStatement(true);
+        this.setNextStatement(true);
+      }
+    };
+    //описание блока подключения на питоне
+    Blockly.Python['vk_api'] = function(block) {
+      var value_token = Blockly.Python.valueToCode(block, 'token', Blockly.Python.ORDER_ATOMIC);
+      //var code = "import requests\n" + "import vk_api\n"+"vk_session = vk_api.VkApi(token=" +value_token+")\n";
+      var code = "\nTOKEN = "+value_token+"\n";
+      return code +"\n";
+    };
+    //описание блока подключения на php
+    Blockly.PHP['vk_api'] = function(block) {
+      var value_token = Blockly.PHP.valueToCode(block, 'token', Blockly.Python.ORDER_ATOMIC);
+      //var code = "import requests\n" + "import vk_api\n"+"vk_session = vk_api.VkApi(token=" +value_token+")\n";
+      var code = "\n$TOKEN = "+value_token+";\n";
+      return code +"\n";
+    };
+    
+    //блок поключения к вк callback api
+    Blockly.Blocks['vk_api2'] = {
+      init: function() {
+        this.setColour(200)
+        this.appendDummyInput()
+          .appendField("Блок подключения к ВК Callback API");
+        this.appendValueInput("confirmation_token")
+          .appendField("Введите токен\nподтверждения сервера");
+        this.appendValueInput("token")
+          .appendField("Введите токен\nдоступа");
+        //this.setPreviousStatement(true);
+        this.setNextStatement(true);
+      }
+    };
+    //описание блока подключения на питоне
+    Blockly.Python['vk_api2'] = function(block) {
+      var value_token = Blockly.Python.valueToCode(block, 'token', Blockly.Python.ORDER_ATOMIC);
+      var confirmation_token = Blockly.Python.valueToCode(block, 'confirmation_token', Blockly.Python.ORDER_ATOMIC);
+      //var code = "import requests\n" + "import vk_api\n"+"vk_session = vk_api.VkApi(token=" +value_token+")\n";
+      var code = "\nTOKEN = "+value_token+"\nconfirmation_token = " + confirmation_token + "\n";
+      return code +"\n";
+    };
+    //описание блока подключения на php
+    Blockly.PHP['vk_api2'] = function(block) {
+      var value_token = Blockly.PHP.valueToCode(block, 'token', Blockly.Python.ORDER_ATOMIC);
+      var confirmation_token = Blockly.PHP.valueToCode(block, 'confirmation_token', Blockly.Python.ORDER_ATOMIC);
+      //var code = "import requests\n" + "import vk_api\n"+"vk_session = vk_api.VkApi(token=" +value_token+")\n";
+      var code = "\n$TOKEN = "+value_token+";\n$confirmation_token = " + confirmation_token + ";\n";
+      return code +"\n";
+    };
+    
+    //блок для ввода ответа с весом
+    Blockly.Blocks['answer_weight'] = {
+      init: function() {
+        this.setColour(256)
+        this.appendValueInput("answer")
+          .appendField("сообщение");
+        this.appendValueInput("weight")
+          .appendField("вес");
+        /*this.appendValueInput("img")
+          .appendField(" ")
+          .setCheck("String");*/
+          //.appendField(new Blockly.FieldCheckbox("false"), "img");
+        this.setInputsInline(false); 
+        this.setOutput(true, null);
+      }
+    };
+    //описание блока ответа с весом на питоне
+    Blockly.Python['answer_weight'] = function(block) {
+      var value_answer = String(Blockly.Python.valueToCode(block, 'answer', Blockly.Python.ORDER_ATOMIC));
+      var value_weight = Blockly.Python.valueToCode(block, 'weight', Blockly.Python.ORDER_ATOMIC);
+     
+    //console.log(typeof(value_img));
+      // TODO: Assemble Python into code variable.
+      var code = Array(value_answer,value_weight);
+      
+      return [code, Blockly.Python.ORDER_ATOMIC]
+    };
+    //описание блока ответа с весом на PHP
+    Blockly.PHP['answer_weight'] = function(block) {
+      var value_answer = String(Blockly.PHP.valueToCode(block, 'answer', Blockly.PHP.ORDER_ATOMIC));
+      var value_weight = Blockly.PHP.valueToCode(block, 'weight', Blockly.PHP.ORDER_ATOMIC);
+     
+    //console.log(typeof(value_img));
+      // TODO: Assemble Python into code variable.
+      var code = Array(value_answer,value_weight);
+      
+      return [code, Blockly.PHP.ORDER_ATOMIC]
+    };
+    //функция вывода ответа с учетом веса(js), тот же принцип используется выше в питоне
+    var percentageChance = function(values, chances) {
+      var pool = [];
+       for ( var i = 0; i < chances.length; i++ ) {
+          for ( var i2 = 0; i2 < chances[i]; i2++ ) {
+             pool.push(values[i]);
+          }
+       }
+      var swap = Math.floor(Math.random()*(pool.length));
+      //console.log(swap);
+      return pool[swap];
+    }
+    Blockly.Blocks['lists_answer1'] = {
+      init: function() {
+        this.setColour(200)
+        this.appendValueInput("answer")
+         .appendField("ответить");
+        this.setPreviousStatement(true, null)
+        
+      }
+    }
+    Blockly.Python['lists_answer1'] = function(block){
+      var value_answer = Blockly.Python.valueToCode(block, 'answer', Blockly.Python.ORDER_ATOMIC);
+      var codereturn = "vk.messages.send(user_id=event.user_id, message="+value_answer+")\n" 
+      
+      return codereturn;
+    }
+    //блок для ответов с мутацией
+    //add in category html 
+    //<block type="lists_answer"> <mutation items_answer="1"></mutation></mutation></block>
+    Blockly.Blocks['lists_answer'] = {
+        init: function() {
+          this.setColour(150)
+          this.itemCount_ = 2;
+          this.updateShape_();
+          //this.setOutput(true, 'Array');
+          this.setPreviousStatement(true, null)
+          //this.setNextStatement(true, null)
+          this.setMutator(new Blockly.Mutator(['lists_answer_item']));
+        },
+      mutationToDom() {
+        var container = Blockly.utils.xml.createElement('mutation');
+        container.setAttribute('items_answer', this.itemCount_);
+        return container;
+      },
+
+      domToMutation: function(xmlElement) {
+        this.itemCount_ = parseInt(xmlElement.getAttribute('items_answer'), 10);
+        this.updateShape_();
+      },
+
+      decompose: function(workspace) {
+        var containerBlock = workspace.newBlock('lists_answer_container');
+        containerBlock.initSvg();
+        var connection = containerBlock.getInput('STACK').connection;
+        for (var i = 0; i < this.itemCount_; i++) {
+          var itemBlock = workspace.newBlock('lists_answer_item');
+          itemBlock.initSvg();
+          connection.connect(itemBlock.previousConnection);
+          connection = itemBlock.nextConnection;
+        }
+        return containerBlock;
+      },
+
+      compose: function(containerBlock) {
+        var itemBlock = containerBlock.getInputTargetBlock('STACK');
+        var connections = [];
+        while (itemBlock) {
+          connections.push(itemBlock.valueConnection_);
+          itemBlock = itemBlock.nextConnection &&
+              itemBlock.nextConnection.targetBlock();
+        }
+        for (var i = 0; i < this.itemCount_; i++) {
+          var connection = this.getInput('Answer' + i).connection.targetConnection;
+          if (connection && connections.indexOf(connection) == -1) {
+            connection.disconnect();
+          }
+        }
+        this.itemCount_ = connections.length;
+        this.updateShape_();
+        for (var i = 0; i < this.itemCount_; i++) {
+          Blockly.Mutator.reconnect(connections[i], this, 'Answer' + i);
+        }
+      },
+
+      saveConnections: function(containerBlock) {
+        var itemBlock = containerBlock.getInputTargetBlock('STACK');
+        var i = 0;
+
+        while (itemBlock) {
+          var input = this.getInput('Answer' + i);
+          itemBlock.valueConnection_ = input && input.connection.targetConnection;
+          i++;
+
+
+          itemBlock = itemBlock.nextConnection && itemBlock.nextConnection.targetBlock();
+        }
+        CountAnswer = i;
+      },
+
+      updateShape_: function() {
+        if (this.itemCount_ && this.getInput('EMPTY')) {
+          this.removeInput('EMPTY');
+        } else if (!this.itemCount_ && !this.getInput('EMPTY')) {
+          this.appendDummyInput('EMPTY')
+        }
+
+        // Add new inputs.
+        for (var i = 0; i < this.itemCount_; i++) {
+          if (!this.getInput('Answer' + i)) {
+            var input = this.appendValueInput('Answer' + i);
+            if (i == 0) {
+              input.appendField("Отправит в ответ");
+
+            } else if( i >= 1){
+              input.appendField("или");
+
+            }
+          }
+        }
+        // Remove deleted inputs.
+        while (this.getInput('Answer' + i)) {
+          this.removeInput('Answer' + i);
+          i++;
+        }
+
+      }
+    }
+    //вспомогательный блок мутации
+    Blockly.Blocks['lists_answer_container'] = {
+      init: function() {
+        this.setColour(150)
+        this.appendDummyInput()
+            .appendField("Варианты ответов")
+        this.appendStatementInput('STACK');
+      }
+    };
+    //вспомогательный блок мутации
+    Blockly.Blocks['lists_answer_item'] = {
+      init: function() {
+        this.setColour(256)
+        this.appendDummyInput()
+          .appendField("ответ")
+        this.setPreviousStatement(true);
+        this.setNextStatement(true);
+       
+        this.contextMenu = false;
+      }
+    };
+    //обработчик блока ответов с мутацией
+    Blockly.Python['lists_answer'] = function(block){
+      
+      var Array_Answer=[];
+      var Array_Weight=[];
+           
+      var array1 = [];
+      var k= 0;
+      
+     for(i=0;i<block.itemCount_;i++){
+        if(Blockly.Python.valueToCode(block,"Answer"+i,Blockly.Python.ORDER_NONE)!=""){
+          array1[i] = block.childBlocks_[k];
+          k++;
+        }
+        else{ array1[i] = "";}
+      }
+       
+      if(block.itemCount_>1){
+     
+        array1.forEach(function(element,i) {
+          if(array1[i]!=""){
+           
+            if(element.type=="text" ){
+              //var n = [Blockly.Python.variableDB_.getName(element.getFieldValue('TEXT'), Blockly.Variables.NAME_TYPE),Blockly.Python.ORDER_ATOMIC][0];
+              var n = [element.getFieldValue('TEXT'), Blockly.Python.ORDER_ATOMIC][0];
+              Array_Answer.push("'"+n+"'");
+              Array_Weight.push("0.5");
+            }else if(element.type=="lists_create_with"){
+               
+              var b = []; 
+               for(var c=0;c<element.itemCount_;c++){
+                  console.log(c);
+                  b[c]=Blockly.Python.valueToCode(element,"ADD"+c,Blockly.Python.ORDER_NONE)||"None";                
+                }
+                b=["["+b.join(", ")+"]",Blockly.Python.ORDER_ATOMIC][0];
+                Array_Answer.push(b);
+                Array_Weight.push("0.5");
+                
+            }else if(element.type=="answer_weight"){
+               
+              Array_Answer.push(Blockly.Python.valueToCode(element,"answer",Blockly.Python.ORDER_NONE));
+              if(Blockly.Python.valueToCode(element,"weight",Blockly.Python.ORDER_NONE)!=""){
+                  Array_Weight.push(Blockly.Python.valueToCode(element,"weight",Blockly.Python.ORDER_NONE));
+              }else{
+                Array_Weight.push("0.5");
+              }
+         
+            }
+          }
+        });
+          
+        var text = "text = choices(["+Array_Answer+"],["+Array_Weight+"])[0]\n";
+        
+      }else{
+        var text ="text = "+ Blockly.Python.valueToCode(block,"Answer"+0,Blockly.Python.ORDER_NONE) +"\n";
+      }
+      
+      var codereturn = text +"return text\n";
+      return codereturn;
+    }
+    
+    Blockly.PHP['lists_answer'] = function(block){
+      
+      var Array_Answer=[];
+      var Array_Weight=[];
+           
+      var array1 = [];
+      var k= 0;
+      
+     for(i=0;i<block.itemCount_;i++){
+        if(Blockly.PHP.valueToCode(block,"Answer"+i,Blockly.PHP.ORDER_NONE)!=""){
+          array1[i] = block.childBlocks_[k];
+          k++;
+        }
+        else{ array1[i] = "";}
+      }
+       
+      if(block.itemCount_>1){
+     
+        array1.forEach(function(element,i) {
+          if(array1[i]!=""){
+           
+            if(element.type=="text" ){
+              //var n = [Blockly.Python.variableDB_.getName(element.getFieldValue('TEXT'), Blockly.Variables.NAME_TYPE),Blockly.Python.ORDER_ATOMIC][0];
+              var n = [element.getFieldValue('TEXT'), Blockly.PHP.ORDER_ATOMIC][0];
+              Array_Answer.push("'"+n+"'");
+              Array_Weight.push("0.5");
+            }else if(element.type=="lists_create_with"){
+               
+              var b = []; 
+               for(var c=0;c<element.itemCount_;c++){
+                  console.log(c);
+                  b[c]=Blockly.PHP.valueToCode(element,"ADD"+c,Blockly.PHP.ORDER_NONE)||"None";                
+                }
+                b=["array("+b.join(", ")+")",Blockly.PHP.ORDER_ATOMIC][0];
+                Array_Answer.push(b);
+                Array_Weight.push("0.5");
+                
+            }else if(element.type=="answer_weight"){
+               
+              Array_Answer.push(Blockly.PHP.valueToCode(element,"answer",Blockly.PHP.ORDER_NONE));
+              if(Blockly.PHP.valueToCode(element,"weight",Blockly.PHP.ORDER_NONE)!=""){
+                  Array_Weight.push(Blockly.PHP.valueToCode(element,"weight",Blockly.PHP.ORDER_NONE));
+              }else{
+                Array_Weight.push("0.5");
+              }
+         
+            }
+          }
+        });
+          
+        var text = "$text = choices(array("+Array_Answer+"),array("+Array_Weight+"));\n";
+        
+      }else{
+        var text ="$text = "+ Blockly.PHP.valueToCode(block,"Answer"+0,Blockly.PHP.ORDER_NONE) +";\n";
+      }
+      
+      var codereturn = text +"return $text;\n";
+      return codereturn;
+    }
+   
+   
+    //вывод кода в правой части экрана
+    function myUpdateFunction(event) {
+      var ls = document.getElementById("language_selection");
+      var language = ls.options[ls.selectedIndex].value;
+      var code = "";
+      if (language == "Python") code = PythonCode + Blockly.Python.workspaceToCode(workspace) + PythonServerCode;
+      if (language == "PHP") code = PHPCode + Blockly.PHP.workspaceToCode(workspace) + PHPServerCode;
+      document.getElementById('code_area').value = code;
+    }
+    workspace.addChangeListener(myUpdateFunction);
+    document.getElementById('code_area').readOnly = true;
+    function Save(){
+      var result = confirm("Сохранить текущий прогресс?\n Прошлая рабочая область будет удалена");
+      if (result){
+        var xml = Blockly.Xml.workspaceToDom(workspace);
+        var xml_text = Blockly.Xml.domToText(xml);
+        localStorage.setItem("blocklyXML", xml_text);
+        alert("рабочая область была сохранена");
+      }
+      
+    }
+    function Insert(){
+      var result = confirm("Восстановить рабочую область из последнего сохранения?\n Текущая рабочая область будет очищена");
+      if (result){
+        var xml = Blockly.Xml.textToDom(localStorage.getItem("blocklyXML"));
+        //Blockly.Xml.domToWorkspace(xml, workspace); 
+        Blockly.Xml.clearWorkspaceAndLoadFromXml(xml, workspace); 
+        alert("рабочая область была восстановлена");
+      }
+    }
+    
+    function Donwload(){
+      var result = confirm("Бот готов?\n");
+      if (result){
+     
+        if (localStorage.getItem('server_ip')!=null){
+            var server_ip = localStorage.getItem('server_ip');
+        }
+        var ls = document.getElementById("language_selection");
+      	var language = ls.options[ls.selectedIndex].value;
+        
+        if (language == "Python") {
+          code = PythonCode + Blockly.Python.workspaceToCode(workspace) + PythonServerCode;
+        	var dataStr = "data:text/python;charset=utf-8," + encodeURIComponent(code);
+          var downloadAnchorNode = document.createElement('a');
+          downloadAnchorNode.setAttribute("href", dataStr);
+          downloadAnchorNode.setAttribute("download", "answer" + ".py");
+          document.body.appendChild(downloadAnchorNode); // required for firefox
+          downloadAnchorNode.click();
+          downloadAnchorNode.remove();
+        }
+        if (language == "PHP") {
+          code = PHPCode + Blockly.PHP.workspaceToCode(workspace) + PHPServerCode;
+          var dataStr = "data:text/php;charset=utf-8," + encodeURIComponent(code);
+          var downloadAnchorNode = document.createElement('a');
+          downloadAnchorNode.setAttribute("href", dataStr);
+          downloadAnchorNode.setAttribute("download", "answer" + ".php");
+          document.body.appendChild(downloadAnchorNode); // required for firefox
+          downloadAnchorNode.click();
+          downloadAnchorNode.remove();
+        }     
+        
+      }
+    }
+    window.onbeforeunload = function() {
+      return false;
+    };
+  </script>
